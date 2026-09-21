@@ -20,6 +20,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * Using a compiler pass instead of a service redefinition makes the override
  * order-independent and frees consuming apps from editing config/services.yml —
  * they only register the bundle in config/bundles.php.
+ *
+ * The media services additionally receive the localized_media switch, so a PIM exporting into a
+ * Magento without MoveCloser_LocalizedMedia can turn the localized layer off in its own config.
  */
 class OverrideWebkulWritersPass implements CompilerPassInterface
 {
@@ -31,6 +34,13 @@ class OverrideWebkulWritersPass implements CompilerPassInterface
         'magento2.connector.service'                                   => ContextAwareMagento2Connector::class,
     ];
 
+    private const LOCALIZED_MEDIA_PARAM = 'magento2_connector_override.localized_media.enabled';
+
+    private const LOCALIZED_MEDIA_AWARE = [
+        'webkul_magento2.writer.product_media.api',
+        'webkul_magento2.processor.magento_normalization.product_media',
+    ];
+
     public function process(ContainerBuilder $container): void
     {
         foreach (self::OVERRIDES as $serviceId => $class) {
@@ -39,6 +49,21 @@ class OverrideWebkulWritersPass implements CompilerPassInterface
             }
 
             $container->getDefinition($serviceId)->setClass($class);
+        }
+
+        if (!$container->hasParameter(self::LOCALIZED_MEDIA_PARAM)) {
+            return;
+        }
+
+        foreach (self::LOCALIZED_MEDIA_AWARE as $serviceId) {
+            if (!$container->hasDefinition($serviceId)) {
+                continue;
+            }
+
+            // The parameter reference is passed, not its value, so an env-backed flag still resolves
+            // at runtime instead of freezing as the placeholder string at compile time.
+            $container->getDefinition($serviceId)
+                ->addMethodCall('setLocalizedMediaEnabled', ['%' . self::LOCALIZED_MEDIA_PARAM . '%']);
         }
     }
 }

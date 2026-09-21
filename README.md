@@ -44,6 +44,38 @@ That is all — the bundle registers the commands itself and swaps the Webkul wr
 
 If these classes were previously copied into the app under `src/MoveCloser/Magento2ConnectorOverride/`, remove that copy and the matching `config/services/services.yml` entries (the command services and the `webkul_magento2.writer.*` overrides) to avoid duplicate class/service definitions. The package now provides them.
 
+## Configuration
+
+The localized media layer - one gallery entry per locale plus the marker push to the companion
+Magento module `MoveCloser_LocalizedMedia` - can be switched off per PIM. It defaults to **on**, so
+an existing install keeps behaving as before without any config file.
+
+```yaml
+# config/packages/magento2_connector_override.yml
+magento2_connector_override:
+    localized_media:
+        enabled: false
+```
+
+With `enabled: false`:
+
+- the media processor delegates to the vanilla conversion again - one entry per attribute, with the
+  native `types` (base/small/thumbnail) left on the entry, since no markers carry the roles;
+- the writer collects no markers and never calls `/V1/movecloser/localized-media/markers`, so a
+  Magento without the companion module stops answering 404 once per SKU;
+- everything else the writer does stays: the `wk_magento2_media_mapping` table, image reuse across
+  exports, and the non-destructive reconciliation that never deletes manually added Magento images.
+
+Akeneo loads `config/packages/*.yml` first and `config/packages/<env>/**/*.yml` after, so a local
+file under the environment directory overrides the shared value. The switch reaches the services as
+a parameter reference, so an env-backed flag works too:
+
+```yaml
+magento2_connector_override:
+    localized_media:
+        enabled: '%env(bool:MAGENTO2_LOCALIZED_MEDIA)%'
+```
+
 ## Usage
 
 Run per PIM (each PIM = one brand). Dry‑run first; add `--apply` to persist. Both commands write only the PIM mapping table — they never write to Magento.

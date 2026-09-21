@@ -25,6 +25,9 @@ use Webkul\Magento2Bundle\Connector\Processor\ProductMediaProcessor;
  * markers the writer posts. Non-localizable images and manually added Magento images keep the
  * default "visible everywhere" behaviour.
  *
+ * With magento2_connector_override.localized_media.enabled = false the whole override steps aside
+ * and every value goes through the vanilla conversion, native roles included.
+ *
  * @author MoveCloser
  */
 class ContextAwareProductMediaProcessor extends ProductMediaProcessor
@@ -35,6 +38,13 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
      * @var list<array<string, mixed>>
      */
     private array $pendingLocalizedEntries = [];
+
+    private bool $localizedMediaEnabled = true;
+
+    public function setLocalizedMediaEnabled(bool $enabled): void
+    {
+        $this->localizedMediaEnabled = $enabled;
+    }
 
     /**
      * {@inheritdoc}
@@ -78,6 +88,12 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
      */
     protected function convertRelativeUrlToBase64($entry, $mediaAltText = '', $position = 0, $imageRoles = [], $mediaAttribute = null, $flag = false, $disable = false)
     {
+        if (!$this->localizedMediaEnabled) {
+            // $imageRoles is forwarded here (unlike below): with no markers to carry the roles, the
+            // native types on the entry are the only thing that makes an image base/small/thumbnail.
+            return parent::convertRelativeUrlToBase64($entry, $mediaAltText, $position, $imageRoles, $mediaAttribute, $flag, $disable);
+        }
+
         $localeValues = $this->extractLocalizedValues($entry);
         // $imageRoles carries the Magento role names the parent already resolved for THIS product
         // type: getImageRoles() for models/simples, getChildImageRoles() (child_base_image/...) for

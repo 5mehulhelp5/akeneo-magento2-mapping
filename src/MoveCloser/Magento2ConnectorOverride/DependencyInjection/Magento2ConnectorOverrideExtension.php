@@ -10,9 +10,9 @@ use Symfony\Component\DependencyInjection\Loader;
 use Symfony\Component\HttpKernel\DependencyInjection\Extension;
 
 /**
- * Loads the bundle service definitions (the console commands). The writer
- * overrides are applied by a compiler pass, not here, so Webkul's existing
- * service arguments are preserved.
+ * Loads the bundle service definitions (the console commands) and exposes the configuration as
+ * container parameters. The writer overrides are applied by a compiler pass, not here, so Webkul's
+ * existing service arguments are preserved.
  */
 class Magento2ConnectorOverrideExtension extends Extension
 {
@@ -24,7 +24,12 @@ class Magento2ConnectorOverrideExtension extends Extension
     public function load(array $configs, ContainerBuilder $container): void
     {
         $configuration = new Configuration();
-        $this->processConfiguration($configuration, $configs);
+        $config = $this->processConfiguration($configuration, $configs);
+
+        $container->setParameter(
+            'magento2_connector_override.localized_media.enabled',
+            $config['localized_media']['enabled']
+        );
 
         $loader = new Loader\YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('cli_commands.yml');

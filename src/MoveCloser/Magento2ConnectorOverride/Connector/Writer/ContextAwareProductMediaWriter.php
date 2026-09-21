@@ -26,6 +26,10 @@ use Webkul\Magento2Bundle\Connector\Writer\ProductMediaWriter;
  *     (MoveCloser_LocalizedMedia), which a GraphQL resolver uses to expose the right images and
  *     base/small/thumbnail per store view.
  *
+ * Step 4 is skipped when magento2_connector_override.localized_media.enabled is false - a Magento
+ * without the companion module would answer the marker call with a 404 per SKU. Steps 1-3 run
+ * either way.
+ *
  * @author MoveCloser
  */
 class ContextAwareProductMediaWriter extends ProductMediaWriter
@@ -34,6 +38,13 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
     private const MAP_TABLE = 'wk_magento2_media_mapping';
 
     private bool $mapTableEnsured = false;
+
+    private bool $localizedMediaEnabled = true;
+
+    public function setLocalizedMediaEnabled(bool $enabled): void
+    {
+        $this->localizedMediaEnabled = $enabled;
+    }
 
     /**
      * Parent SKUs already reconciled in this step, so a model with N variants is not reconciled N
@@ -220,7 +231,10 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
             $this->upsertMap($apiUrl, $sku, (string) $name, $valueId, $locale);
             $valueIdLocales[$valueId][$locale] = true;
             $sentByLocale[$locale][$name] = true;
-            $this->collectMarkers($entry['meta'] ?? [], $valueId, $localeToStoreCodes, $markers);
+
+            if ($this->localizedMediaEnabled) {
+                $this->collectMarkers($entry['meta'] ?? [], $valueId, $localeToStoreCodes, $markers);
+            }
 
             // Feed the batch summary so the report reflects the work done (the vanilla writer's
             // counters are bypassed together with parent::write()).
@@ -264,8 +278,10 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
             }
         }
 
-        $this->applyRoleFallback($markers);
-        $this->postMarkers($sku, $markers, $this->storeScopeFor($scopeLocales, $localeToStoreCodes));
+        if ($this->localizedMediaEnabled) {
+            $this->applyRoleFallback($markers);
+            $this->postMarkers($sku, $markers, $this->storeScopeFor($scopeLocales, $localeToStoreCodes));
+        }
     }
 
     /**
