@@ -161,6 +161,12 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
         $existing = $this->existingMedia($sku);
 
         if (null === $existing) {
+            // Silence here used to end the run green with nothing uploaded. In a media-only export
+            // (no product steps to create it first) a SKU absent from Magento is the common case,
+            // so it has to reach the batch report instead of vanishing.
+            $this->stepExecution->incrementSummaryInfo('gallery_unreadable');
+            $this->warn($sku, 'LocalizedMedia: gallery could not be read (product missing in Magento or API error) - media skipped.');
+
             return;
         }
 
