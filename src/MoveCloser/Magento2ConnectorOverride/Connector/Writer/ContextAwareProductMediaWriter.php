@@ -78,6 +78,13 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
             return;
         }
 
+        if (!$this->mediaExportEnabled()) {
+            $this->stepExecution->incrementSummaryInfo('media_skipped_no_media_mode', count($items));
+            $this->stepExecution->addSummaryInfo('media_export', 'skipped - with_media is off');
+
+            return;
+        }
+
         $this->ensureMapTable();
 
         $addNewOnly = !empty($this->getParameters()['addNewOnly']);
@@ -102,6 +109,18 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
                 $this->reconcileMedia((string) $sku, $mainItem['media_gallery_entries'] ?? []);
             }
         }
+    }
+
+    /**
+     * A with_media=false run carries no gallery entries at all, which reconcileMedia() would read as
+     * "the PIM dropped every image" and delete the whole tracked gallery. Job profiles that predate
+     * the flag have no such key and keep exporting media.
+     */
+    private function mediaExportEnabled(): bool
+    {
+        $parameters = $this->getParameters();
+
+        return !array_key_exists('with_media', $parameters) || (bool) $parameters['with_media'];
     }
 
     /**

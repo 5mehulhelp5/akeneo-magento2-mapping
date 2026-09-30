@@ -8,6 +8,8 @@ Hardening layer for the **Webkul Magento2 connector** (`webkul/magento2bundle`) 
 2. **Attribute‑option mapping drift / "already exists"** — stale or corrupted option ids make the connector POST instead of PUT. `magento2:reconcile-option-mappings` repairs/creates option mappings by slug against live Magento.
 3. **Product‑export self‑poisoning** — vanilla product export writes junk option mappings (`externalId = code`) and leaks raw codes into attribute values. `ContextAwareProductWriter` skips unmapped option values (and logs them) instead, so it never corrupts the mapping cache.
 
+4. **Media wiped by a `with_media: false` export** — the media steps run whatever the flag says, and with no gallery entries in the payload the reconciliation reads every tracked image as "removed in the PIM" and deletes it from Magento. `ContextAwareProductMediaWriter` skips the step entirely when `with_media` is off; profiles that have no such parameter keep exporting media.
+
 ## Install
 
 In each PIM's `composer.json`, add the VCS repository (alongside the existing Webkul repo):
