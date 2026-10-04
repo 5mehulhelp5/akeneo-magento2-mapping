@@ -184,7 +184,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
             // (no product steps to create it first) a SKU absent from Magento is the common case,
             // so it has to reach the batch report instead of vanishing.
             $this->stepExecution->incrementSummaryInfo('gallery_unreadable');
-            $this->warn($sku, 'LocalizedMedia: gallery could not be read (product missing in Magento or API error) - media skipped.');
+            $this->warn($sku, 'Media export: gallery could not be read (product missing in Magento or API error) - media skipped.');
 
             return;
         }
@@ -387,7 +387,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
         $response = $this->createProductMedia($sku, 'all', ['entry' => $payload]);
 
         if (is_array($response) && isset($response['error'])) {
-            $this->warn($sku, 'LocalizedMedia: media upload failed: ' . (is_string($response['error']) ? $response['error'] : json_encode($response['error'])));
+            $this->warn($sku, 'Media export: upload failed: ' . (is_string($response['error']) ? $response['error'] : json_encode($response['error'])));
 
             return null;
         }
@@ -395,7 +395,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
         $valueId = (int) trim((string) $response, '"');
 
         if ($valueId <= 0) {
-            $this->warn($sku, 'LocalizedMedia: media upload returned no id (' . substr((string) $response, 0, 120) . ')');
+            $this->warn($sku, 'Media export: upload returned no id (' . substr((string) $response, 0, 120) . ')');
 
             return null;
         }
@@ -430,7 +430,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
         $response = $this->updateProductMedia($valueId, $sku, 'all', ['entry' => $entry]);
 
         if (is_array($response) && isset($response['error'])) {
-            $this->warn($sku, 'LocalizedMedia: could not clear native roles before delete (value ' . $valueId . '): ' . (is_string($response['error']) ? $response['error'] : json_encode($response['error'])));
+            $this->warn($sku, 'Media export: could not clear native roles before delete (value ' . $valueId . '): ' . (is_string($response['error']) ? $response['error'] : json_encode($response['error'])));
         }
     }
 
@@ -636,7 +636,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
                 $this->jsonHeaders
             );
         } catch (\Exception $e) {
-            $this->warn($sku, 'LocalizedMedia: markers push failed: ' . $e->getMessage());
+            $this->warn($sku, 'Media export: per-store markers push failed: ' . $e->getMessage());
         }
     }
 
