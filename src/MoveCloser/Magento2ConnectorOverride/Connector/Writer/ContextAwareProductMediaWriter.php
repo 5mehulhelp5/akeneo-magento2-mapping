@@ -36,6 +36,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
 {
     private const MARKER_ENDPOINT = '/V1/movecloser/localized-media/markers';
     private const MAP_TABLE = 'wk_magento2_media_mapping';
+    private const GALLERY_FIELDS = 'sku,media_gallery_entries[id,media_type,label,position,disabled,types,file]';
 
     private bool $mapTableEnsured = false;
 
@@ -99,14 +100,14 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
 
                 if ($parentSku && !isset($this->reconciledParents[(string) $parentSku])) {
                     $this->reconciledParents[(string) $parentSku] = true;
-                    $this->reconcileMedia((string) $parentSku, $mainItem['parent']['media_gallery_entries'] ?? []);
+                    $this->reconcileMedia((string) $parentSku, $mainItem['parent']['media_gallery_entries'] ?? [], $mainItem['parent']['media_unreadable'] ?? []);
                 }
             }
 
             $sku = $mainItem['metadata']['identifier'] ?? $mainItem['sku'] ?? null;
 
             if ($sku) {
-                $this->reconcileMedia((string) $sku, $mainItem['media_gallery_entries'] ?? []);
+                $this->reconcileMedia((string) $sku, $mainItem['media_gallery_entries'] ?? [], $mainItem['media_unreadable'] ?? []);
             }
         }
     }
@@ -167,11 +168,17 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
      * anything the PIM did not put there.
      *
      * @param list<array<string, mixed>> $entries
+     * @param list<string>               $unreadable names of PIM files that could not be read
      */
-    private function reconcileMedia(string $sku, array $entries): void
+    private function reconcileMedia(string $sku, array $entries, array $unreadable = []): void
     {
         $apiUrl = $this->apiUrl();
         $mapRows = $this->loadMap($apiUrl, $sku);
+        $unreadableNames = array_fill_keys($unreadable, true);
+
+        if ($unreadableNames) {
+            $this->warn($sku, 'Media export: file unreadable in PIM storage - not sent, a tracked Magento copy is not deleted: ' . implode(', ', array_keys($unreadableNames)));
+        }
 
         if (!$entries && !$mapRows) {
             return;
@@ -280,6 +287,7 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
         // is not in the map and is therefore never removed.
         $scopeLocales = $this->reconcileScopeLocales($exportedLocales);
         $orphanCandidates = [];
+        $kept = [];
 
         foreach ($scopeLocales as $locale) {
             foreach ($mappedByLocale[$locale] ?? [] as $name => $valueId) {
@@ -287,10 +295,19 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
                     continue;
                 }
 
+                if (isset($unreadableNames[$name])) {
+                    $kept[$name] = true;
+                    continue;
+                }
+
                 $this->deleteMapRow($apiUrl, $sku, (string) $name, $locale);
                 unset($valueIdLocales[$valueId][$locale]);
                 $orphanCandidates[$valueId] = true;
             }
+        }
+
+        if ($kept) {
+            $this->stepExecution->incrementSummaryInfo('media_unreadable_kept', count($kept));
         }
 
         foreach (array_keys($orphanCandidates) as $valueId) {
@@ -461,30 +478,16 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
      * Current Magento gallery of the product, indexed for reuse. Null when the gallery could not be
      * read - the SKU is absent in Magento or the call failed - and uploading would be unsafe.
      *
-     * This doubles as the product-exists probe: a separate full-product GET would cost one more
-     * round trip per SKU and return the whole payload only to be cast to a bool.
-     *
      * @return array{0: array<int, true>, 1: array<string, int>, 2: array<int, array<string, mixed>>, 3: array<string, list<int>>}|null
      *         [value_id => true], [file basename => value_id], [value_id => raw media entry],
      *         [bare file name => [value_id, ...]]
      */
     private function existingMedia(string $sku): ?array
     {
-        $existing = $this->getProductMedias($sku, 'all');
+        $existing = $this->galleryEntries($sku);
 
-        if (!is_array($existing)) {
+        if (null === $existing) {
             return null;
-        }
-
-        if (isset($existing['error'])) {
-            // OAuthClient uznaje za błąd każdą odpowiedź, której `json_decode` daje wartość falsy,
-            // a pusta galeria to poprawne `[]`. Bez tego rozróżnienia produkt bez zdjęć w Magento -
-            // czyli dokładnie ten, który potrzebuje pierwszego uploadu - byłby pomijany.
-            if ('[]' !== trim((string) $this->oauthClient->getLastResponse())) {
-                return null;
-            }
-
-            $existing = [];
         }
 
         $ids = [];
@@ -517,6 +520,26 @@ class ContextAwareProductMediaWriter extends ProductMediaWriter
         }
 
         return [$ids, $byName, $rawById, $byBare];
+    }
+
+    /**
+     * @return list<array<string, mixed>>|null
+     */
+    private function galleryEntries(string $sku): ?array
+    {
+        // `GET .../media` odsyła każdy plik jako base64 i pada 400, gdy jednego brakuje na dysku Magento
+        $url = str_replace('{sku}', urlencode($sku), $this->oauthClient->getApiUrlByEndpoint('getProduct', ''))
+            . '?fields=' . urlencode(self::GALLERY_FIELDS);
+
+        try {
+            $this->oauthClient->fetch($url, [], 'GET', $this->jsonHeaders);
+        } catch (\Exception $e) {
+            return null;
+        }
+
+        $product = json_decode($this->oauthClient->getLastResponse(), true);
+
+        return is_array($product) ? $product['media_gallery_entries'] ?? [] : null;
     }
 
     /**

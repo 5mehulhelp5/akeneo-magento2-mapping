@@ -41,6 +41,13 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
 
     private bool $localizedMediaEnabled = true;
 
+    /**
+     * Osobna lista na każdy poziom rekurencji process() - rodzic jest przetwarzany wewnątrz dziecka.
+     *
+     * @var list<list<string>>
+     */
+    private array $unreadableStack = [];
+
     public function setLocalizedMediaEnabled(bool $enabled): void
     {
         $this->localizedMediaEnabled = $enabled;
@@ -55,7 +62,17 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
             $this->pendingLocalizedEntries = [];
         }
 
-        $result = parent::process($product, $recursiveCall);
+        $this->unreadableStack[] = [];
+
+        try {
+            $result = parent::process($product, $recursiveCall);
+        } finally {
+            $unreadable = array_pop($this->unreadableStack);
+        }
+
+        if ($unreadable) {
+            $result['media_unreadable'] = array_values(array_unique($unreadable));
+        }
 
         if (is_array($result) && !empty($this->pendingLocalizedEntries) && isset($result['media_gallery_entries'])) {
             $position = count($result['media_gallery_entries']);
@@ -91,7 +108,13 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
         if (!$this->localizedMediaEnabled) {
             // $imageRoles is forwarded here (unlike below): with no markers to carry the roles, the
             // native types on the entry are the only thing that makes an image base/small/thumbnail.
-            return parent::convertRelativeUrlToBase64($entry, $mediaAltText, $position, $imageRoles, $mediaAttribute, $flag, $disable);
+            $converted = parent::convertRelativeUrlToBase64($entry, $mediaAltText, $position, $imageRoles, $mediaAttribute, $flag, $disable);
+
+            if (!$converted) {
+                $this->rememberUnreadable($entry);
+            }
+
+            return $converted;
         }
 
         $localeValues = $this->extractLocalizedValues($entry);
@@ -111,6 +134,8 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
             if ($converted) {
                 $converted['meta']['locale'] = null;
                 $converted['meta'] += $roles;
+            } else {
+                $this->rememberUnreadable($entry);
             }
 
             return $converted;
@@ -130,6 +155,7 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
             );
 
             if (!$converted) {
+                $this->rememberUnreadable($value['data']);
                 continue;
             }
 
@@ -144,6 +170,23 @@ class ContextAwareProductMediaProcessor extends ProductMediaProcessor
         }
 
         return $default;
+    }
+
+    /**
+     * Rodzic zwraca null także po wyjątku odczytu pliku; bez tej nazwy writer skasowałby zdjęcie w Magento.
+     *
+     * @param mixed $entry
+     */
+    private function rememberUnreadable($entry): void
+    {
+        $path = is_array($entry) ? ($entry[0]['data'] ?? null) : $entry;
+
+        if (!is_string($path) || '' === $path) {
+            return;
+        }
+
+        $parts = explode('/', $path);
+        $this->unreadableStack[array_key_last($this->unreadableStack)][] = substr(end($parts), -85);
     }
 
     /**

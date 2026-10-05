@@ -39,6 +39,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class ReconcileMediaMappingCommand extends Command
 {
     private const MAP_TABLE = 'wk_magento2_media_mapping';
+    private const GALLERY_FIELDS = 'sku,media_gallery_entries[id,file]';
 
     public function __construct(private readonly Connection $connection)
     {
@@ -95,7 +96,8 @@ class ReconcileMediaMappingCommand extends Command
 
         foreach ($expectedBySku as $sku => $expectedNames) {
             try {
-                $media = $this->httpGetJson($apiBase . '/rest/all/V1/products/' . rawurlencode((string) $sku) . '/media', $token);
+                $product = $this->httpGetJson($apiBase . '/rest/all/V1/products/' . rawurlencode((string) $sku) . '?fields=' . rawurlencode(self::GALLERY_FIELDS), $token);
+                $media = $product['media_gallery_entries'] ?? [];
             } catch (\RuntimeException $e) {
                 if ($e->getCode() === 404) {
                     // Product not in Magento yet / no media - nothing to seed.

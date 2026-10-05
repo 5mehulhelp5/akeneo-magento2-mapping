@@ -10,6 +10,10 @@ Hardening layer for the **Webkul Magento2 connector** (`webkul/magento2bundle`) 
 
 4. **Media wiped by a `with_media: false` export** — the media steps run whatever the flag says, and with no gallery entries in the payload the reconciliation reads every tracked image as "removed in the PIM" and deletes it from Magento. `ContextAwareProductMediaWriter` skips the step entirely when `with_media` is off; profiles that have no such parameter keep exporting media.
 
+5. **Gallery read that ships every file back** — `GET /V1/products/{sku}/media` returns each gallery file base64-encoded and fails with HTTP 400 for the whole SKU when one file is missing on the Magento disk. The writer and `magento2:reconcile-media-mappings` read the gallery from `GET /V1/products/{sku}?fields=sku,media_gallery_entries[...]` instead: same entries, no file contents.
+
+6. **Media deleted because the PIM could not read its file** — the vanilla processor silently drops an image whose file is unreadable in the PIM file storage, and the reconciliation then deletes it from Magento as "removed in the PIM". `ContextAwareProductMediaProcessor` reports such files as `media_unreadable`; the writer keeps their Magento copy, logs a warning and counts them as `media_unreadable_kept`. With `localized_media` on, such an image gets no per-store markers until its file is readable again, so another image may take its base/small/thumbnail role meanwhile.
+
 ## Install
 
 In each PIM's `composer.json`, add the VCS repository (alongside the existing Webkul repo):
