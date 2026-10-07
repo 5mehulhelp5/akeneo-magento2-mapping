@@ -14,6 +14,10 @@ Hardening layer for the **Webkul Magento2 connector** (`webkul/magento2bundle`) 
 
 6. **Media deleted because the PIM could not read its file** — the vanilla processor silently drops an image whose file is unreadable in the PIM file storage, and the reconciliation then deletes it from Magento as "removed in the PIM". `ContextAwareProductMediaProcessor` reports such files as `media_unreadable`; the writer keeps their Magento copy, logs a warning and counts them as `media_unreadable_kept`. With `localized_media` on, such an image gets no per-store markers until its file is readable again, so another image may take its base/small/thumbnail role meanwhile.
 
+7. **A GET before every product PUT** — the vanilla writer fetches the product before each PUT but reads the response only to keep a configurable's existing child links. `ContextAwareProductWriter` fetches configurables only; every other type goes straight to the PUT with the same payload.
+
+8. **The same product saved twice** — a store view with the locale, channel and currency of `allStoreView` gets an identical second PUT, which Magento answers with a full save that leaves only `url_key` copies and empty date rows in the store view. The product writer skips such a store view in the export jobs; category export, the grid quick export (`magento2_quick_export` bypasses the store filter) and any store view with a different locale, channel or currency are unaffected. Store-view rows written by earlier exports are not removed: rows equal to the global value are safe to delete, any other row now masks the global value the export keeps updating.
+
 ## Install
 
 In each PIM's `composer.json`, add the VCS repository (alongside the existing Webkul repo):

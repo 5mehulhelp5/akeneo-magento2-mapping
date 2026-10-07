@@ -65,6 +65,95 @@ class ContextAwareProductWriter extends ProductWriter
     /**
      * {@inheritdoc}
      *
+     * The fetched product is read only to carry a configurable's existing child links into the PUT,
+     * so every other type skips that GET. The store-view unsets mirror the parent.
+     *
+     * @param array<string, mixed> $productData
+     * @param string               $storeViewCode
+     * @param mixed                $parent
+     *
+     * @return array<string, mixed>
+     */
+    protected function checkProductAndModifyData($productData, $storeViewCode, $parent = null)
+    {
+        if (($productData[self::AKENEO_ENTITY_NAME]['type_id'] ?? null) === 'configurable') {
+            return parent::checkProductAndModifyData($productData, $storeViewCode, $parent);
+        }
+
+        if ('all' !== $storeViewCode) {
+            unset(
+                $productData[self::AKENEO_ENTITY_NAME]['tier_prices'],
+                $productData[self::AKENEO_ENTITY_NAME]['extension_attributes']['downloadable_product_links'],
+                $productData[self::AKENEO_ENTITY_NAME]['extension_attributes']['downloadable_product_samples']
+            );
+        }
+
+        return $productData;
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A store view sharing locale, channel and currency with "all" would get the same payload again: a full
+     * product save that leaves only url_key copies and empty date rows in the store view. Product export
+     * skips it; the category export still needs that store view.
+     *
+     * @param array<string, array<string, mixed>> $storeMappings
+     * @param list<string>                        $locales
+     * @param list<string>                        $channels
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function updateStoreMappingValueByLocalesChannels(array $storeMappings, array $locales, array $channels)
+    {
+        $storeMappings = parent::updateStoreMappingValueByLocalesChannels($storeMappings, $locales, $channels);
+        $all = $storeMappings[self::DEFAULT_STORE_VIEW_CODE] ?? null;
+
+        if (null === $all) {
+            return $storeMappings;
+        }
+
+        $allCurrency = $this->effectiveCurrency('all', $all);
+
+        foreach ($storeMappings as $storeViewCode => $mapping) {
+            if (self::DEFAULT_STORE_VIEW_CODE === $storeViewCode) {
+                continue;
+            }
+
+            $currency = $this->effectiveCurrency((string) $storeViewCode, $mapping);
+
+            if (
+                ($mapping['locale'] ?? null) === $all['locale']
+                && ($mapping['channel'] ?? null) === $all['channel']
+                && null !== $currency
+                && $currency === $allCurrency
+            ) {
+                unset($storeMappings[$storeViewCode]);
+            }
+        }
+
+        return $storeMappings;
+    }
+
+    /**
+     * Same resolution as write(): the mapped currency, else the store view's base currency.
+     *
+     * @param array<string, mixed> $mapping
+     */
+    private function effectiveCurrency(string $storeViewCode, array $mapping): ?string
+    {
+        if (!empty($mapping['currency'])) {
+            return (string) $mapping['currency'];
+        }
+
+        $baseCurrency = $this->storeSettings[$storeViewCode]['base_currency_code'] ?? null;
+
+        return empty($baseCurrency) ? null : (string) $baseCurrency;
+    }
+
+    /**
+     * {@inheritdoc}
+     *
      * Mirrors the parent implementation for date/simple/metric attributes; only
      * the select/multiselect branch is hardened against unmapped options.
      *
